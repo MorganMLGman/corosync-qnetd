@@ -1,26 +1,20 @@
 # corosync-qnetd
 
-`corosync-qnetd` (the external vote for a two-node Proxmox cluster) as a
-multi-arch image: `linux/amd64`, `linux/arm64`, `linux/arm/v7`. The `arm/v7`
-build is the reason this repository exists — it runs as a container on 32-bit
-ARM MikroTik routers such as the L009.
+`corosync-qnetd` (external vote for a two-node Proxmox cluster) as a multi-arch
+image: `linux/amd64`, `linux/arm64`, `linux/arm/v7`, so it also runs as a
+MikroTik RouterOS container.
 
 ```
-ghcr.io/morganmlgman/corosync-qnetd:latest
+ghcr.io/morganmlgman/corosync-qnetd:0.1.0
 ```
 
 ## Configuration
 
-No secret is baked into the image: the CA is generated on first start.
-
-| What | How |
-|------|-----|
-| Root SSH key (required) | a mounted `/root/.ssh/authorized_keys` (wins when both are given), or the `AUTHORIZED_KEYS` env var with several keys separated by `;` or newlines. Every line must be a public key or the container refuses to start. Whatever owner and mode the mounted file has, the entrypoint copies it to a root-owned file for sshd. It must be the **Proxmox node's** root key (`/root/.ssh/id_rsa.pub`): `pvecm qdevice setup` logs in with it |
-| CA and node certificates | persist `/etc/corosync/qnetd/nssdb` — losing it silently stops the QDevice voting |
-| Ports | 5403/tcp (qnetd), 22/tcp (only for `pvecm qdevice setup`) |
-
-SSH is key-only; there is no password login. The container refuses to start
-without a valid public key.
+- `AUTHORIZED_KEYS`: the Proxmox node's `/root/.ssh/id_rsa.pub`; several keys
+  separated by `;` or newlines. Or mount `/root/.ssh/authorized_keys`. SSH is
+  key-only and the container refuses to start on an invalid key.
+- Persist `/etc/corosync/qnetd/nssdb` (the CA and node certificates).
+- Ports: 5403/tcp (qnetd), 22/tcp (only for `pvecm qdevice setup`).
 
 ## Docker
 
@@ -29,10 +23,28 @@ docker run -d --name qnetd --restart unless-stopped \
   -p 22:22 -p 5403:5403 \
   -v qnetd-nssdb:/etc/corosync/qnetd/nssdb \
   -e AUTHORIZED_KEYS="$(ssh root@<pve-node> cat /root/.ssh/id_rsa.pub)" \
-  ghcr.io/morganmlgman/corosync-qnetd:latest
+  ghcr.io/morganmlgman/corosync-qnetd:0.1.0
 ```
 
-Then, from one Proxmox node (all nodes need `corosync-qdevice` installed):
+## RouterOS
+
+Needs the `container` package and an **ext4** disk (FAT32 fails).
+
+```
+/file add name=usb1/qnetd type=directory
+/file add name=usb1/qnetd/nssdb type=directory
+/interface veth add name=veth-qnetd address=<container-ip>/24 gateway=<router-ip>
+/container mounts add list=qnetd-nssdb src=/usb1/qnetd/nssdb dst=/etc/corosync/qnetd/nssdb
+/container envs add list=qnetd key=AUTHORIZED_KEYS value="<pve1 key>;<pve2 key>"
+/container add remote-image=ghcr.io/morganmlgman/corosync-qnetd:0.1.0 \
+    interface=veth-qnetd envlists=qnetd mountlists=qnetd-nssdb \
+    root-dir=usb1/qnetd/root logging=yes start-on-boot=yes comment=qnetd
+/container start [find comment=qnetd]
+```
+
+## Proxmox
+
+With `corosync-qdevice` installed on every node, from one node:
 
 ```sh
 pvecm qdevice setup <container-ip>
