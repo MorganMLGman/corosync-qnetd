@@ -15,7 +15,7 @@ No secret is baked into the image: the CA is generated on first start.
 
 | What | How |
 |------|-----|
-| Root SSH key (required) | `AUTHORIZED_KEYS` env var (one or more public keys), or a mounted `/root/.ssh/authorized_keys`. It must be the **Proxmox node's** root key (`/root/.ssh/id_rsa.pub`): `pvecm qdevice setup` logs in with it, and a key that is already authorized also lets a read-only mount work |
+| Root SSH key (required) | a mounted `/root/.ssh/authorized_keys` (wins when both are given), or the `AUTHORIZED_KEYS` env var with several keys separated by `;` or newlines. Every line must be a public key or the container refuses to start. Whatever owner and mode the mounted file has, the entrypoint copies it to a root-owned file for sshd. It must be the **Proxmox node's** root key (`/root/.ssh/id_rsa.pub`): `pvecm qdevice setup` logs in with it |
 | CA and node certificates | persist `/etc/corosync/qnetd/nssdb` — losing it silently stops the QDevice voting |
 | Ports | 5403/tcp (qnetd), 22/tcp (only for `pvecm qdevice setup`) |
 
